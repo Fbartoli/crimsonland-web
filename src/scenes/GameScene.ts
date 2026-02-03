@@ -835,11 +835,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private getXPThreshold(level: number): number {
-    // Growing XP thresholds - each level requires more XP
-    // Formula: base * (level - 1) * level / 2
+    // Growing XP requirements - higher levels need more XP
+    // Formula: base * (level - 1) * level / 2 (triangular numbers)
     // Level 2: 500, Level 3: 1500, Level 4: 3000, Level 5: 5000, etc.
-    // With 50 XP per zombie: ~10 kills for level 2, ~20 more for level 3, etc.
-    return Math.floor(LEVEL_XP_BASE * (level - 1) * level / 2);
+    return LEVEL_XP_BASE * (level - 1) * level / 2;
   }
 
   private checkLevelUp(): void {

@@ -150,9 +150,9 @@ export const SPEED_SCALE_BASE = 0.9;
 export const PERK_CHOICES_COUNT = 7;
 
 // Level-up thresholds - cumulative XP needed to reach each level
-// Using growing formula: threshold = base * (level - 1) * level / 2
+// Growing formula: base * (level - 1) * level / 2
+// Higher levels require more XP than previous levels
 // Level 2: 500, Level 3: 1500, Level 4: 3000, Level 5: 5000, etc.
-// Each level requires MORE XP than the previous
 export const LEVEL_XP_BASE = 500;
 
 export type PerkEffect =
