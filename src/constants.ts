@@ -149,24 +149,41 @@ export const SPEED_SCALE_BASE = 0.9;
 // Perks are stackable via perk_counts[] array (crimsonland.exe:3995)
 export const PERK_CHOICES_COUNT = 7;
 
+// Level-up formula from crimsonland.exe:6917-6919
+// threshold = 1000 * (1 - pow(0.7, level))
+// Level 2 at 300 XP, Level 3 at 510 XP, etc. (gaps DECREASE over time)
+export const LEVEL_XP_BASE = 1000;
+export const LEVEL_XP_POWER = 0.7;
+
+export type PerkEffect =
+  | 'regeneration'
+  | 'damage_reduction'
+  | 'speed_bonus'
+  | 'fire_rate'
+  | 'damage_bonus'
+  | 'reload_speed'
+  | 'xp_bonus'
+  | 'health_bonus';
+
 export interface PerkConfig {
   id: string;
   name: string;
   description: string;
   stackable: boolean;
   maxStacks?: number; // undefined = unlimited
-  effect: 'regeneration' | 'damage_reduction' | 'speed_bonus';
+  effect: PerkEffect;
   value: number; // effect magnitude per stack
 }
 
 export const PERKS: PerkConfig[] = [
+  // Defensive perks
   {
     id: 'regeneration',
     name: 'Regeneration',
     description: '+1 HP/sec when below max health',
     stackable: true,
     effect: 'regeneration',
-    value: 1, // HP per second per stack
+    value: 1,
   },
   {
     id: 'thick_skinned',
@@ -174,14 +191,57 @@ export const PERKS: PerkConfig[] = [
     description: '10% damage reduction per stack',
     stackable: true,
     effect: 'damage_reduction',
-    value: 0.1, // 10% per stack
+    value: 0.1,
   },
+  {
+    id: 'health_bonus',
+    name: 'Tough Guy',
+    description: '+20 max health per stack',
+    stackable: true,
+    effect: 'health_bonus',
+    value: 20,
+  },
+  // Movement perks
   {
     id: 'long_distance_runner',
     name: 'Long Distance Runner',
     description: '+15% movement speed per stack',
     stackable: true,
     effect: 'speed_bonus',
-    value: 0.15, // 15% per stack
+    value: 0.15,
+  },
+  // Offensive perks
+  {
+    id: 'fastshot',
+    name: 'Fastshot',
+    description: '+15% fire rate per stack',
+    stackable: true,
+    effect: 'fire_rate',
+    value: 0.15,
+  },
+  {
+    id: 'sharpshooter',
+    name: 'Sharpshooter',
+    description: '+20% damage per stack',
+    stackable: true,
+    effect: 'damage_bonus',
+    value: 0.2,
+  },
+  // Utility perks
+  {
+    id: 'fast_loader',
+    name: 'Fast Loader',
+    description: '20% faster reload per stack',
+    stackable: true,
+    effect: 'reload_speed',
+    value: 0.2,
+  },
+  {
+    id: 'lean_mean_xp_machine',
+    name: 'Lean Mean XP Machine',
+    description: '+15 XP per kill per stack',
+    stackable: true,
+    effect: 'xp_bonus',
+    value: 15,
   },
 ];

@@ -19,6 +19,8 @@ import {
   PERKS,
   PERK_CHOICES_COUNT,
   PerkConfig,
+  LEVEL_XP_BASE,
+  LEVEL_XP_POWER,
 } from '../constants';
 
 export class GameScene extends Phaser.Scene {
@@ -389,6 +391,36 @@ export class GameScene extends Phaser.Scene {
     this.player.setRotation(angle);
   }
 
+  private getEffectiveReloadTime(): number {
+    const weapon = this.getCurrentWeapon();
+    // Fast Loader: 20% faster reload per stack
+    const fastLoaderStacks = this.perkCounts.get('fast_loader') || 0;
+    const reloadBonus = Math.min(fastLoaderStacks * 0.2, 0.8); // Cap at 80% reduction
+    return weapon.reloadTime * (1 - reloadBonus);
+  }
+
+  private getEffectiveFireRate(): number {
+    const weapon = this.getCurrentWeapon();
+    // Fastshot: 15% faster fire rate per stack
+    const fastshotStacks = this.perkCounts.get('fastshot') || 0;
+    const fireRateBonus = Math.min(fastshotStacks * 0.15, 0.6); // Cap at 60% reduction
+    return weapon.fireRate * (1 - fireRateBonus);
+  }
+
+  private getEffectiveDamage(): number {
+    const weapon = this.getCurrentWeapon();
+    // Sharpshooter: 20% more damage per stack
+    const sharpshooterStacks = this.perkCounts.get('sharpshooter') || 0;
+    const damageBonus = sharpshooterStacks * 0.2;
+    return weapon.damage * (1 + damageBonus);
+  }
+
+  private getEffectiveMaxHealth(): number {
+    // Tough Guy: +20 max health per stack
+    const healthBonusStacks = this.perkCounts.get('health_bonus') || 0;
+    return PLAYER_MAX_HEALTH + (healthBonusStacks * 20);
+  }
+
   private handleReload(time: number): void {
     const weapon = this.getCurrentWeapon();
 
@@ -403,7 +435,7 @@ export class GameScene extends Phaser.Scene {
     if (!this.isReloading && this.ammo < weapon.clipSize) {
       if (Phaser.Input.Keyboard.JustDown(this.reloadKey) || this.ammo === 0) {
         this.isReloading = true;
-        this.reloadEndTime = time + weapon.reloadTime;
+        this.reloadEndTime = time + this.getEffectiveReloadTime();
         this.reloadText.setVisible(true);
       }
     }
@@ -413,9 +445,9 @@ export class GameScene extends Phaser.Scene {
     if (this.isReloading) return;
     if (this.ammo <= 0) return;
 
-    const weapon = this.getCurrentWeapon();
+    const effectiveFireRate = this.getEffectiveFireRate();
 
-    if (this.input.activePointer.isDown && time > this.lastFireTime + weapon.fireRate) {
+    if (this.input.activePointer.isDown && time > this.lastFireTime + effectiveFireRate) {
       this.fireBullets();
       this.lastFireTime = time;
       this.ammo--;
@@ -423,7 +455,7 @@ export class GameScene extends Phaser.Scene {
       // Auto-reload when empty
       if (this.ammo === 0) {
         this.isReloading = true;
-        this.reloadEndTime = time + weapon.reloadTime;
+        this.reloadEndTime = time + this.getEffectiveReloadTime();
         this.reloadText.setVisible(true);
       }
     }
@@ -579,10 +611,10 @@ export class GameScene extends Phaser.Scene {
     b.setActive(false);
     b.setVisible(false);
 
-    // Apply damage to creature
-    const weapon = this.getCurrentWeapon();
+    // Apply damage to creature (with Sharpshooter bonus)
+    const effectiveDamage = this.getEffectiveDamage();
     const currentHealth = (c.getData('health') as number) || 0;
-    const newHealth = currentHealth - weapon.damage;
+    const newHealth = currentHealth - effectiveDamage;
     c.setData('health', newHealth);
 
     // Flash creature white on hit
@@ -597,7 +629,12 @@ export class GameScene extends Phaser.Scene {
     // Kill creature if health depleted
     if (newHealth <= 0) {
       const creatureType = c.getData('creatureType') as CreatureType;
-      const xpValue = CREATURES[creatureType].xpValue;
+      let xpValue = CREATURES[creatureType].xpValue;
+
+      // Lean Mean XP Machine: +15 XP per kill per stack
+      const xpBonusStacks = this.perkCounts.get('lean_mean_xp_machine') || 0;
+      xpValue += xpBonusStacks * 15;
+
       this.playerXP += xpValue;
 
       // Try to drop loot
@@ -658,10 +695,11 @@ export class GameScene extends Phaser.Scene {
     if (!p.active) return;
 
     // Only pick up if not at full health
-    if (this.playerHealth >= PLAYER_MAX_HEALTH) return;
+    const maxHealth = this.getEffectiveMaxHealth();
+    if (this.playerHealth >= maxHealth) return;
 
     // Heal player (cap at max)
-    this.playerHealth = Math.min(this.playerHealth + HEALTH_PICKUP_AMOUNT, PLAYER_MAX_HEALTH);
+    this.playerHealth = Math.min(this.playerHealth + HEALTH_PICKUP_AMOUNT, maxHealth);
 
     // Remove pickup
     p.setActive(false);
@@ -747,8 +785,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateHUD(): void {
-    // Update health bar
-    const healthPercent = Math.max(0, this.playerHealth / PLAYER_MAX_HEALTH);
+    // Update health bar (use effective max health for Tough Guy perk)
+    const maxHealth = this.getEffectiveMaxHealth();
+    const healthPercent = Math.max(0, this.playerHealth / maxHealth);
     this.healthBarFill.setScale(healthPercent, 1);
 
     // Change color based on health
@@ -797,9 +836,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private getXPThreshold(level: number): number {
-    // Simplified from original: 1000 - pow(0.7, level) * 1000
-    // Using linear approximation: 1000 * level
-    return 1000 * level;
+    // Original formula from crimsonland.exe:6917-6919
+    // threshold = 1000 * (1 - pow(0.7, level))
+    // Level 2 at 300 XP, Level 3 at 510 XP, Level 4 at 657 XP, etc.
+    // Gaps DECREASE over time (snowball effect - more perks = faster leveling)
+    return Math.floor(LEVEL_XP_BASE * (1 - Math.pow(LEVEL_XP_POWER, level)));
   }
 
   private checkLevelUp(): void {
@@ -905,13 +946,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   private applyPerkEffects(delta: number): void {
+    const maxHealth = this.getEffectiveMaxHealth();
+
     // Regeneration: +1 HP/sec per stack when below max health
     // From crimsonland.exe:4710 - condition: health < 100 && health > 0
     const regenStacks = this.perkCounts.get('regeneration') || 0;
-    if (regenStacks > 0 && this.playerHealth < PLAYER_MAX_HEALTH && this.playerHealth > 0) {
+    if (regenStacks > 0 && this.playerHealth < maxHealth && this.playerHealth > 0) {
       const regenRate = regenStacks * 1; // 1 HP per second per stack
       this.playerHealth = Math.min(
-        PLAYER_MAX_HEALTH,
+        maxHealth,
         this.playerHealth + regenRate * (delta / 1000)
       );
     }
