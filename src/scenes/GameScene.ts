@@ -12,6 +12,8 @@ import {
   SPEED_SCALE_FACTOR,
   SPEED_SCALE_BASE,
   WEAPON_DROP_CHANCE,
+  HEALTH_DROP_CHANCE,
+  HEALTH_PICKUP_AMOUNT,
 } from '../constants';
 
 export class GameScene extends Phaser.Scene {
@@ -33,6 +35,7 @@ export class GameScene extends Phaser.Scene {
   bullets!: Phaser.Physics.Arcade.Group;
   creatures!: Phaser.Physics.Arcade.Group;
   weaponPickups!: Phaser.Physics.Arcade.Group;
+  healthPickups!: Phaser.Physics.Arcade.Group;
 
   // Timers
   lastFireTime = 0;
@@ -98,6 +101,11 @@ export class GameScene extends Phaser.Scene {
       maxSize: 50,
     });
 
+    // Create health pickups group
+    this.healthPickups = this.physics.add.group({
+      maxSize: 30,
+    });
+
     // Create player at center
     this.player = this.physics.add.sprite(ARENA_SIZE / 2, ARENA_SIZE / 2, 'player');
     this.player.setCollideWorldBounds(true);
@@ -124,6 +132,14 @@ export class GameScene extends Phaser.Scene {
       this.player,
       this.weaponPickups,
       this.onWeaponPickup,
+      undefined,
+      this
+    );
+
+    this.physics.add.overlap(
+      this.player,
+      this.healthPickups,
+      this.onHealthPickup,
       undefined,
       this
     );
@@ -526,8 +542,9 @@ export class GameScene extends Phaser.Scene {
       const xpValue = CREATURES[creatureType].xpValue;
       this.playerXP += xpValue;
 
-      // Try to drop a weapon
+      // Try to drop loot
       this.tryDropWeapon(c.x, c.y);
+      this.tryDropHealth(c.x, c.y);
 
       c.setActive(false);
       c.setVisible(false);
@@ -556,6 +573,47 @@ export class GameScene extends Phaser.Scene {
 
     // Spawn with full ammo
     this.spawnWeaponPickup(x, y, weaponIndex, weapon.clipSize);
+  }
+
+  private tryDropHealth(x: number, y: number): void {
+    if (Math.random() > HEALTH_DROP_CHANCE) return;
+
+    const pickup = this.healthPickups.create(x, y, 'health') as Phaser.Physics.Arcade.Sprite;
+    if (!pickup) return;
+
+    pickup.setActive(true);
+    pickup.setVisible(true);
+    pickup.setDepth(5);
+
+    // Slight random offset
+    pickup.setPosition(
+      x + Phaser.Math.Between(-10, 10),
+      y + Phaser.Math.Between(-10, 10)
+    );
+  }
+
+  private onHealthPickup(
+    _player: Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
+    pickup: Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
+  ): void {
+    const p = pickup as Phaser.Physics.Arcade.Sprite;
+    if (!p.active) return;
+
+    // Only pick up if not at full health
+    if (this.playerHealth >= PLAYER_MAX_HEALTH) return;
+
+    // Heal player (cap at max)
+    this.playerHealth = Math.min(this.playerHealth + HEALTH_PICKUP_AMOUNT, PLAYER_MAX_HEALTH);
+
+    // Remove pickup
+    p.setActive(false);
+    p.setVisible(false);
+
+    // Visual feedback - brief green flash
+    this.player.setTint(0x44ff44);
+    this.time.delayedCall(100, () => {
+      this.player.clearTint();
+    });
   }
 
   private onCreatureHitPlayer(

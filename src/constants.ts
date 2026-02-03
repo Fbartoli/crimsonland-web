@@ -61,6 +61,10 @@ export const WEAPONS: WeaponConfig[] = [
 // Weapon drop chance when creature dies
 export const WEAPON_DROP_CHANCE = 0.15; // 15% chance to drop a weapon
 
+// Health pickups
+export const HEALTH_DROP_CHANCE = 0.10; // 10% chance to drop health
+export const HEALTH_PICKUP_AMOUNT = 25; // HP restored on pickup
+
 // Legacy constants for backwards compatibility
 export const PISTOL_FIRE_RATE = WEAPONS[0].fireRate;
 export const PISTOL_DAMAGE = WEAPONS[0].damage;
