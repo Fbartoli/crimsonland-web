@@ -4,18 +4,23 @@ import {
   PLAYER_MOVE_SPEED,
   ARENA_SIZE,
   SPAWN_INTERVAL,
-  ZOMBIE_BASE_SPEED,
-  ZOMBIE_DAMAGE,
   PLAYER_COLLISION_COOLDOWN,
   WEAPONS,
+  CREATURES,
+  CreatureType,
+  SPEED_SCALE_DIVISOR,
+  SPEED_SCALE_FACTOR,
+  SPEED_SCALE_BASE,
 } from '../constants';
 
 export class GameScene extends Phaser.Scene {
   // Player state
   player!: Phaser.Physics.Arcade.Sprite;
   playerHealth = PLAYER_MAX_HEALTH;
+  playerXP = 0;
   lastDamageTime = 0;
   isGameOver = false;
+  gameStartTime = 0;
 
   // Weapon state
   currentWeaponIndex = 0;
@@ -38,6 +43,7 @@ export class GameScene extends Phaser.Scene {
   weaponText!: Phaser.GameObjects.Text;
   reloadText!: Phaser.GameObjects.Text;
   gameOverText!: Phaser.GameObjects.Text;
+  xpText!: Phaser.GameObjects.Text;
 
   // Input
   cursors!: {
@@ -60,12 +66,14 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     // Reset game state
     this.playerHealth = PLAYER_MAX_HEALTH;
+    this.playerXP = 0;
     this.lastDamageTime = 0;
     this.isGameOver = false;
     this.lastFireTime = 0;
     this.currentWeaponIndex = 0;
     this.ammo = WEAPONS[0].clipSize;
     this.isReloading = false;
+    this.gameStartTime = this.time.now;
 
     // Set world bounds (arena)
     this.physics.world.setBounds(0, 0, ARENA_SIZE, ARENA_SIZE);
@@ -79,9 +87,8 @@ export class GameScene extends Phaser.Scene {
       maxSize: 200,
     });
 
-    // Create creatures group
+    // Create creatures group (no default key - we handle textures per type)
     this.creatures = this.physics.add.group({
-      defaultKey: 'zombie',
       maxSize: 200,
     });
 
@@ -187,6 +194,16 @@ export class GameScene extends Phaser.Scene {
     this.gameOverText.setScrollFactor(0);
     this.gameOverText.setDepth(100);
     this.gameOverText.setVisible(false);
+
+    // XP counter (top right)
+    this.xpText = this.add.text(784, 16, 'XP: 0', {
+      fontSize: '20px',
+      color: '#44ffff',
+      fontFamily: 'Arial',
+    });
+    this.xpText.setOrigin(1, 0);
+    this.xpText.setScrollFactor(0);
+    this.xpText.setDepth(100);
   }
 
   update(time: number, _delta: number): void {
@@ -219,12 +236,14 @@ export class GameScene extends Phaser.Scene {
     playerGraphics.generateTexture('player', 32, 32);
     playerGraphics.destroy();
 
-    // Zombie - red rectangle 32x32
-    const zombieGraphics = this.make.graphics({ x: 0, y: 0 });
-    zombieGraphics.fillStyle(0xff4444);
-    zombieGraphics.fillRect(0, 0, 32, 32);
-    zombieGraphics.generateTexture('zombie', 32, 32);
-    zombieGraphics.destroy();
+    // Create creature sprites for each type
+    for (const creature of CREATURES) {
+      const g = this.make.graphics({ x: 0, y: 0 });
+      g.fillStyle(creature.color);
+      g.fillRect(0, 0, creature.size, creature.size);
+      g.generateTexture(`creature_${creature.type}`, creature.size, creature.size);
+      g.destroy();
+    }
 
     // Bullet - yellow rectangle 8x4
     const bulletGraphics = this.make.graphics({ x: 0, y: 0 });
@@ -391,6 +410,29 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private getCreatureTypeToSpawn(): CreatureType {
+    const elapsed = this.time.now - this.gameStartTime;
+    const elapsedSeconds = elapsed / 1000;
+
+    // Build weighted pool based on time
+    const pool: CreatureType[] = [];
+
+    // Zombies always spawn
+    pool.push(CreatureType.ZOMBIE, CreatureType.ZOMBIE, CreatureType.ZOMBIE);
+
+    // Fast creatures after 30 seconds
+    if (elapsedSeconds >= 30) {
+      pool.push(CreatureType.FAST, CreatureType.FAST);
+    }
+
+    // Tanks after 120 seconds
+    if (elapsedSeconds >= 120) {
+      pool.push(CreatureType.TANK);
+    }
+
+    return pool[Phaser.Math.Between(0, pool.length - 1)];
+  }
+
   private spawnCreature(): void {
     const edge = Phaser.Math.Between(0, 3);
     let x: number, y: number;
@@ -402,21 +444,41 @@ export class GameScene extends Phaser.Scene {
       default: x = 0; y = Phaser.Math.Between(0, ARENA_SIZE); break;
     }
 
-    const creature = this.creatures.get(x, y) as Phaser.Physics.Arcade.Sprite;
+    const creatureType = this.getCreatureTypeToSpawn();
+    const config = CREATURES[creatureType];
+
+    // Create sprite with correct texture
+    const creature = this.creatures.create(x, y, `creature_${creatureType}`) as Phaser.Physics.Arcade.Sprite;
     if (!creature) return;
 
     creature.setActive(true);
     creature.setVisible(true);
     creature.setPosition(x, y);
+    creature.setTint(config.color);
+
+    // Store creature data
+    creature.setData('creatureType', creatureType);
+    creature.setData('health', config.health);
+  }
+
+  private getSpeedMultiplier(): number {
+    // Formula from crimsonland.exe:5104
+    return (this.playerXP / SPEED_SCALE_DIVISOR) * SPEED_SCALE_FACTOR + SPEED_SCALE_BASE;
   }
 
   private moveCreatures(): void {
+    const speedMultiplier = this.getSpeedMultiplier();
+
     this.creatures.getChildren().forEach((creature) => {
       const c = creature as Phaser.Physics.Arcade.Sprite;
       if (!c.active) return;
 
+      const creatureType = c.getData('creatureType') as CreatureType;
+      const config = CREATURES[creatureType];
+
       const angle = Phaser.Math.Angle.Between(c.x, c.y, this.player.x, this.player.y);
-      const speed = ZOMBIE_BASE_SPEED * 100;
+      const baseSpeed = config.speed * 100;
+      const speed = baseSpeed * speedMultiplier;
       c.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
       c.setRotation(angle);
     });
@@ -429,10 +491,36 @@ export class GameScene extends Phaser.Scene {
     const b = bullet as Phaser.Physics.Arcade.Sprite;
     const c = creature as Phaser.Physics.Arcade.Sprite;
 
+    if (!c.active) return;
+
+    // Deactivate bullet
     b.setActive(false);
     b.setVisible(false);
-    c.setActive(false);
-    c.setVisible(false);
+
+    // Apply damage to creature
+    const weapon = this.getCurrentWeapon();
+    const currentHealth = (c.getData('health') as number) || 0;
+    const newHealth = currentHealth - weapon.damage;
+    c.setData('health', newHealth);
+
+    // Flash creature white on hit
+    c.setTint(0xffffff);
+    this.time.delayedCall(50, () => {
+      if (c.active) {
+        const creatureType = c.getData('creatureType') as CreatureType;
+        c.setTint(CREATURES[creatureType].color);
+      }
+    });
+
+    // Kill creature if health depleted
+    if (newHealth <= 0) {
+      const creatureType = c.getData('creatureType') as CreatureType;
+      const xpValue = CREATURES[creatureType].xpValue;
+      this.playerXP += xpValue;
+
+      c.setActive(false);
+      c.setVisible(false);
+    }
   }
 
   private onCreatureHitPlayer(
@@ -445,7 +533,9 @@ export class GameScene extends Phaser.Scene {
     if (this.time.now < this.lastDamageTime + cooldownMs) return;
     if (!c.active) return;
 
-    this.playerHealth -= ZOMBIE_DAMAGE;
+    const creatureType = c.getData('creatureType') as CreatureType;
+    const damage = CREATURES[creatureType].damage;
+    this.playerHealth -= damage;
     this.lastDamageTime = this.time.now;
 
     this.player.setTint(0xff0000);
@@ -471,6 +561,9 @@ export class GameScene extends Phaser.Scene {
     // Update weapon and ammo text
     this.weaponText.setText(`[${this.currentWeaponIndex + 1}] ${this.getCurrentWeapon().name}`);
     this.ammoText.setText(this.getAmmoText());
+
+    // Update XP text
+    this.xpText.setText(`XP: ${this.playerXP}`);
   }
 
   private checkDeath(): void {

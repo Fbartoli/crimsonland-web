@@ -55,11 +55,62 @@ export const PISTOL_FIRE_RATE = WEAPONS[0].fireRate;
 export const PISTOL_DAMAGE = WEAPONS[0].damage;
 export const BULLET_SPEED = WEAPONS[0].bulletSpeed;
 
-// Creatures (just zombie for MVP)
-export const ZOMBIE_HEALTH = 40;
-export const ZOMBIE_BASE_SPEED = 0.9;
-export const ZOMBIE_XP_VALUE = 10;
-export const ZOMBIE_DAMAGE = 20;
+// Creature types
+export enum CreatureType {
+  ZOMBIE = 0,
+  FAST = 1,
+  TANK = 2,
+}
+
+export interface CreatureConfig {
+  type: CreatureType;
+  name: string;
+  health: number;
+  speed: number; // multiplier
+  damage: number;
+  xpValue: number;
+  size: number; // sprite size in px
+  color: number; // hex color for placeholder
+}
+
+export const CREATURES: CreatureConfig[] = [
+  {
+    type: CreatureType.ZOMBIE,
+    name: 'Zombie',
+    health: 40,
+    speed: 0.9,
+    damage: 20,
+    xpValue: 10,
+    size: 32,
+    color: 0xff4444, // red
+  },
+  {
+    type: CreatureType.FAST,
+    name: 'Runner',
+    health: 20,
+    speed: 1.8,
+    damage: 10,
+    xpValue: 15,
+    size: 24,
+    color: 0xffaa44, // orange
+  },
+  {
+    type: CreatureType.TANK,
+    name: 'Brute',
+    health: 150,
+    speed: 0.5,
+    damage: 40,
+    xpValue: 50,
+    size: 48,
+    color: 0x8844ff, // purple
+  },
+];
+
+// Legacy constants for backwards compatibility
+export const ZOMBIE_HEALTH = CREATURES[0].health;
+export const ZOMBIE_BASE_SPEED = CREATURES[0].speed;
+export const ZOMBIE_XP_VALUE = CREATURES[0].xpValue;
+export const ZOMBIE_DAMAGE = CREATURES[0].damage;
 
 // Spawning
 export const SPAWN_INTERVAL = 2000; // ms
