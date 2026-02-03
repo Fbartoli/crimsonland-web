@@ -88,6 +88,9 @@ export interface CreatureConfig {
   color: number; // hex color for placeholder
 }
 
+// XP formula from crimsonland.exe:5169-5172, 5233:
+// reward_value = (health * 0.4 + contact_damage * 0.8 + move_speed * 5.0 + random(10-19)) * 0.8
+// Special creatures: 320-900 XP (lines 5179, 5189, 5199, 5213, 5225)
 export const CREATURES: CreatureConfig[] = [
   {
     type: CreatureType.ZOMBIE,
@@ -95,7 +98,7 @@ export const CREATURES: CreatureConfig[] = [
     health: 40,
     speed: 0.9,
     damage: 20,
-    xpValue: 25, // increased from 10
+    xpValue: 50, // base creature ~34-50 XP in original
     size: 32,
     color: 0xff4444, // red
   },
@@ -105,7 +108,7 @@ export const CREATURES: CreatureConfig[] = [
     health: 20,
     speed: 1.8,
     damage: 10,
-    xpValue: 35, // increased from 15
+    xpValue: 80, // faster = more XP
     size: 24,
     color: 0xffaa44, // orange
   },
@@ -115,7 +118,7 @@ export const CREATURES: CreatureConfig[] = [
     health: 150,
     speed: 0.5,
     damage: 40,
-    xpValue: 100, // increased from 50
+    xpValue: 300, // special creatures give 320-600 XP in original
     size: 48,
     color: 0x8844ff, // purple
   },
@@ -127,11 +130,12 @@ export const ZOMBIE_BASE_SPEED = CREATURES[0].speed;
 export const ZOMBIE_XP_VALUE = CREATURES[0].xpValue;
 export const ZOMBIE_DAMAGE = CREATURES[0].damage;
 
-// Spawning - from crimsonland.exe:37535-37538
-// Original formula: 3500 - elapsed_ms / 800, minimum 100ms
-export const SPAWN_INTERVAL_BASE = 3500; // ms - starting spawn interval
-export const SPAWN_INTERVAL_DIVISOR = 800; // elapsed_ms / this = reduction
-export const SPAWN_INTERVAL_MIN = 100; // ms - fastest spawn rate
+// Spawning - from crimsonland.exe:4960 and 37535-37538
+// Original uses 250ms base cooldown with acceleration
+// Formula: base - elapsed_ms / divisor, minimum 100ms
+export const SPAWN_INTERVAL_BASE = 1000; // ms - starting spawn interval (faster than before)
+export const SPAWN_INTERVAL_DIVISOR = 200; // elapsed_ms / this = reduction (faster acceleration)
+export const SPAWN_INTERVAL_MIN = 250; // ms - from crimsonland.exe:4960 (0xfa = 250)
 export const ARENA_SIZE = 2000; // px
 
 // Scaling formula from crimsonland.exe:5104
