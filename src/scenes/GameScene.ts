@@ -30,6 +30,7 @@ export class GameScene extends Phaser.Scene {
   ammo = WEAPONS[0].clipSize;
   isReloading = false;
   reloadEndTime = 0;
+  lastWeaponPickupTime = 0;
 
   // Groups
   bullets!: Phaser.Physics.Arcade.Group;
@@ -77,6 +78,7 @@ export class GameScene extends Phaser.Scene {
     this.currentWeaponIndex = 0;
     this.ammo = WEAPONS[0].clipSize;
     this.isReloading = false;
+    this.lastWeaponPickupTime = 0;
     this.gameStartTime = this.time.now;
 
     // Set world bounds (arena)
@@ -644,8 +646,15 @@ export class GameScene extends Phaser.Scene {
     const p = pickup as Phaser.Physics.Arcade.Sprite;
     if (!p.active) return;
 
+    // Prevent rapid swap loops - 500ms cooldown
+    if (this.time.now < this.lastWeaponPickupTime + 500) return;
+
     const pickupWeaponIndex = p.getData('weaponIndex') as number;
     const pickupAmmo = p.getData('ammo') as number;
+
+    // Remove the pickup first (before spawning new one)
+    p.setActive(false);
+    p.setVisible(false);
 
     // Drop current weapon at player position
     this.spawnWeaponPickup(this.player.x, this.player.y, this.currentWeaponIndex, this.ammo);
@@ -655,10 +664,7 @@ export class GameScene extends Phaser.Scene {
     this.ammo = pickupAmmo;
     this.isReloading = false;
     this.reloadText.setVisible(false);
-
-    // Remove the pickup
-    p.setActive(false);
-    p.setVisible(false);
+    this.lastWeaponPickupTime = this.time.now;
   }
 
   private spawnWeaponPickup(x: number, y: number, weaponIndex: number, ammo: number): void {
