@@ -830,8 +830,10 @@ export class GameScene extends Phaser.Scene {
       const y = startY + index * buttonHeight;
       const currentStacks = this.perkCounts.get(perk.id) || 0;
 
-      // Button background
+      // Button background - set high depth and scrollFactor for each element
       const bg = this.add.rectangle(400, y, buttonWidth, buttonHeight - 10, 0x444466);
+      bg.setScrollFactor(0);
+      bg.setDepth(202);
       bg.setInteractive({ useHandCursor: true });
       bg.on('pointerover', () => bg.setFillStyle(0x6666aa));
       bg.on('pointerout', () => bg.setFillStyle(0x444466));
@@ -845,6 +847,8 @@ export class GameScene extends Phaser.Scene {
         fontFamily: 'Arial',
       });
       nameText.setOrigin(0.5);
+      nameText.setScrollFactor(0);
+      nameText.setDepth(203);
 
       // Perk description
       const descText = this.add.text(400, y + 10, perk.description, {
@@ -853,6 +857,8 @@ export class GameScene extends Phaser.Scene {
         fontFamily: 'Arial',
       });
       descText.setOrigin(0.5);
+      descText.setScrollFactor(0);
+      descText.setDepth(203);
 
       this.perkContainer.add([bg, nameText, descText]);
     });
