@@ -149,11 +149,11 @@ export const SPEED_SCALE_BASE = 0.9;
 // Perks are stackable via perk_counts[] array (crimsonland.exe:3995)
 export const PERK_CHOICES_COUNT = 7;
 
-// Level-up formula from crimsonland.exe:6917-6919
-// threshold = 1000 * (1 - pow(0.7, level))
-// Level 2 at 300 XP, Level 3 at 510 XP, etc. (gaps DECREASE over time)
-export const LEVEL_XP_BASE = 1000;
-export const LEVEL_XP_POWER = 0.7;
+// Level-up thresholds - cumulative XP needed to reach each level
+// Using growing formula: threshold = base * (level - 1) * level / 2
+// Level 2: 500, Level 3: 1500, Level 4: 3000, Level 5: 5000, etc.
+// Each level requires MORE XP than the previous
+export const LEVEL_XP_BASE = 500;
 
 export type PerkEffect =
   | 'regeneration'

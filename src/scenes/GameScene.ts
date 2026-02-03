@@ -20,7 +20,6 @@ import {
   PERK_CHOICES_COUNT,
   PerkConfig,
   LEVEL_XP_BASE,
-  LEVEL_XP_POWER,
 } from '../constants';
 
 export class GameScene extends Phaser.Scene {
@@ -836,11 +835,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private getXPThreshold(level: number): number {
-    // Original formula from crimsonland.exe:6917-6919
-    // threshold = 1000 * (1 - pow(0.7, level))
-    // Level 2 at 300 XP, Level 3 at 510 XP, Level 4 at 657 XP, etc.
-    // Gaps DECREASE over time (snowball effect - more perks = faster leveling)
-    return Math.floor(LEVEL_XP_BASE * (1 - Math.pow(LEVEL_XP_POWER, level)));
+    // Growing XP thresholds - each level requires more XP
+    // Formula: base * (level - 1) * level / 2
+    // Level 2: 500, Level 3: 1500, Level 4: 3000, Level 5: 5000, etc.
+    // With 50 XP per zombie: ~10 kills for level 2, ~20 more for level 3, etc.
+    return Math.floor(LEVEL_XP_BASE * (level - 1) * level / 2);
   }
 
   private checkLevelUp(): void {
