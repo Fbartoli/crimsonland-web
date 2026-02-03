@@ -5,15 +5,61 @@ export const PLAYER_MAX_HEALTH = 100;
 export const PLAYER_MOVE_SPEED = 200; // px/sec
 export const PLAYER_COLLISION_COOLDOWN = 0.5; // seconds
 
-// Weapons (just pistol for MVP)
-export const PISTOL_FIRE_RATE = 200; // ms between shots
-export const PISTOL_DAMAGE = 10;
-export const BULLET_SPEED = 800;
+// Weapons
+export interface WeaponConfig {
+  name: string;
+  fireRate: number; // ms between shots
+  damage: number;
+  clipSize: number;
+  reloadTime: number; // ms
+  bulletSpeed: number;
+  pellets: number; // 1 for single shot, >1 for spread
+  spread: number; // radians, 0 for single shot
+}
+
+export const WEAPONS: WeaponConfig[] = [
+  {
+    name: 'Pistol',
+    fireRate: 200,
+    damage: 10,
+    clipSize: 12,
+    reloadTime: 1000,
+    bulletSpeed: 800,
+    pellets: 1,
+    spread: 0,
+  },
+  {
+    name: 'SMG',
+    fireRate: 80,
+    damage: 8,
+    clipSize: 30,
+    reloadTime: 1200,
+    bulletSpeed: 900,
+    pellets: 1,
+    spread: 0.1, // slight inaccuracy
+  },
+  {
+    name: 'Shotgun',
+    fireRate: 600,
+    damage: 15,
+    clipSize: 8,
+    reloadTime: 1500,
+    bulletSpeed: 700,
+    pellets: 8,
+    spread: 0.3,
+  },
+];
+
+// Legacy constants for backwards compatibility
+export const PISTOL_FIRE_RATE = WEAPONS[0].fireRate;
+export const PISTOL_DAMAGE = WEAPONS[0].damage;
+export const BULLET_SPEED = WEAPONS[0].bulletSpeed;
 
 // Creatures (just zombie for MVP)
 export const ZOMBIE_HEALTH = 40;
 export const ZOMBIE_BASE_SPEED = 0.9;
 export const ZOMBIE_XP_VALUE = 10;
+export const ZOMBIE_DAMAGE = 20;
 
 // Spawning
 export const SPAWN_INTERVAL = 2000; // ms

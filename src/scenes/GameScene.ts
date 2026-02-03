@@ -3,11 +3,11 @@ import {
   PLAYER_MAX_HEALTH,
   PLAYER_MOVE_SPEED,
   ARENA_SIZE,
-  PISTOL_FIRE_RATE,
-  BULLET_SPEED,
   SPAWN_INTERVAL,
   ZOMBIE_BASE_SPEED,
+  ZOMBIE_DAMAGE,
   PLAYER_COLLISION_COOLDOWN,
+  WEAPONS,
 } from '../constants';
 
 export class GameScene extends Phaser.Scene {
@@ -16,6 +16,12 @@ export class GameScene extends Phaser.Scene {
   playerHealth = PLAYER_MAX_HEALTH;
   lastDamageTime = 0;
   isGameOver = false;
+
+  // Weapon state
+  currentWeaponIndex = 0;
+  ammo = WEAPONS[0].clipSize;
+  isReloading = false;
+  reloadEndTime = 0;
 
   // Groups
   bullets!: Phaser.Physics.Arcade.Group;
@@ -26,7 +32,11 @@ export class GameScene extends Phaser.Scene {
   nextSpawnTime = 0;
 
   // UI
-  healthText!: Phaser.GameObjects.Text;
+  healthBarBg!: Phaser.GameObjects.Rectangle;
+  healthBarFill!: Phaser.GameObjects.Rectangle;
+  ammoText!: Phaser.GameObjects.Text;
+  weaponText!: Phaser.GameObjects.Text;
+  reloadText!: Phaser.GameObjects.Text;
   gameOverText!: Phaser.GameObjects.Text;
 
   // Input
@@ -36,13 +46,14 @@ export class GameScene extends Phaser.Scene {
     left: Phaser.Input.Keyboard.Key;
     right: Phaser.Input.Keyboard.Key;
   };
+  reloadKey!: Phaser.Input.Keyboard.Key;
+  weaponKeys!: Phaser.Input.Keyboard.Key[];
 
   constructor() {
     super({ key: 'GameScene' });
   }
 
   preload(): void {
-    // Create placeholder sprites as colored rectangles
     this.createPlaceholderSprites();
   }
 
@@ -52,6 +63,9 @@ export class GameScene extends Phaser.Scene {
     this.lastDamageTime = 0;
     this.isGameOver = false;
     this.lastFireTime = 0;
+    this.currentWeaponIndex = 0;
+    this.ammo = WEAPONS[0].clipSize;
+    this.isReloading = false;
 
     // Set world bounds (arena)
     this.physics.world.setBounds(0, 0, ARENA_SIZE, ARENA_SIZE);
@@ -59,10 +73,10 @@ export class GameScene extends Phaser.Scene {
     // Create a simple background
     this.add.rectangle(ARENA_SIZE / 2, ARENA_SIZE / 2, ARENA_SIZE, ARENA_SIZE, 0x2d2d44);
 
-    // Create bullet group
+    // Create bullet group (increased size for shotgun)
     this.bullets = this.physics.add.group({
       defaultKey: 'bullet',
-      maxSize: 100,
+      maxSize: 200,
     });
 
     // Create creatures group
@@ -93,11 +107,11 @@ export class GameScene extends Phaser.Scene {
       this
     );
 
-    // Set up camera to follow player
+    // Set up camera
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
     this.cameras.main.setBounds(0, 0, ARENA_SIZE, ARENA_SIZE);
 
-    // Set up WASD input
+    // Set up input
     this.cursors = {
       up: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.W),
       down: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.S),
@@ -105,19 +119,64 @@ export class GameScene extends Phaser.Scene {
       right: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D),
     };
 
+    this.reloadKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+
+    this.weaponKeys = [
+      this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ONE),
+      this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.TWO),
+      this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.THREE),
+    ];
+
     // Set initial spawn time
     this.nextSpawnTime = this.time.now + SPAWN_INTERVAL;
 
-    // Create HUD (fixed to camera)
-    this.healthText = this.add.text(16, 16, `Health: ${this.playerHealth}`, {
-      fontSize: '24px',
+    // Create HUD
+    this.createHUD();
+  }
+
+  private createHUD(): void {
+    // Health bar background
+    this.healthBarBg = this.add.rectangle(16, 16, 200, 20, 0x333333);
+    this.healthBarBg.setOrigin(0, 0);
+    this.healthBarBg.setScrollFactor(0);
+    this.healthBarBg.setDepth(100);
+
+    // Health bar fill
+    this.healthBarFill = this.add.rectangle(16, 16, 200, 20, 0x44ff44);
+    this.healthBarFill.setOrigin(0, 0);
+    this.healthBarFill.setScrollFactor(0);
+    this.healthBarFill.setDepth(101);
+
+    // Weapon name
+    this.weaponText = this.add.text(16, 44, this.getCurrentWeapon().name, {
+      fontSize: '20px',
       color: '#ffffff',
       fontFamily: 'Arial',
     });
-    this.healthText.setScrollFactor(0);
-    this.healthText.setDepth(100);
+    this.weaponText.setScrollFactor(0);
+    this.weaponText.setDepth(100);
 
-    // Create game over text (hidden initially)
+    // Ammo counter
+    this.ammoText = this.add.text(16, 68, this.getAmmoText(), {
+      fontSize: '20px',
+      color: '#ffff44',
+      fontFamily: 'Arial',
+    });
+    this.ammoText.setScrollFactor(0);
+    this.ammoText.setDepth(100);
+
+    // Reload indicator (hidden initially)
+    this.reloadText = this.add.text(400, 400, 'RELOADING...', {
+      fontSize: '24px',
+      color: '#ff8844',
+      fontFamily: 'Arial',
+    });
+    this.reloadText.setOrigin(0.5);
+    this.reloadText.setScrollFactor(0);
+    this.reloadText.setDepth(100);
+    this.reloadText.setVisible(false);
+
+    // Game over text (hidden initially)
     this.gameOverText = this.add.text(400, 300, 'GAME OVER\n\nClick to restart', {
       fontSize: '48px',
       color: '#ff4444',
@@ -131,9 +190,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(time: number, _delta: number): void {
-    // Handle game over state
     if (this.isGameOver) {
-      // Check for click to restart
       if (this.input.activePointer.isDown) {
         this.scene.restart();
       }
@@ -142,11 +199,14 @@ export class GameScene extends Phaser.Scene {
 
     this.handleMovement();
     this.handleAiming();
+    this.handleWeaponSwitch();
+    this.handleReload(time);
     this.handleShooting(time);
     this.handleSpawning(time);
     this.moveCreatures();
     this.cleanupBullets();
     this.checkDeath();
+    this.updateHUD();
   }
 
   private createPlaceholderSprites(): void {
@@ -154,7 +214,6 @@ export class GameScene extends Phaser.Scene {
     const playerGraphics = this.make.graphics({ x: 0, y: 0 });
     playerGraphics.fillStyle(0x44ff44);
     playerGraphics.fillRect(0, 0, 32, 32);
-    // Add a direction indicator (triangle pointing right)
     playerGraphics.fillStyle(0x22aa22);
     playerGraphics.fillTriangle(20, 16, 32, 8, 32, 24);
     playerGraphics.generateTexture('player', 32, 32);
@@ -182,27 +241,27 @@ export class GameScene extends Phaser.Scene {
     healthGraphics.destroy();
   }
 
+  private getCurrentWeapon() {
+    return WEAPONS[this.currentWeaponIndex];
+  }
+
+  private getAmmoText(): string {
+    const weapon = this.getCurrentWeapon();
+    return `${this.ammo} / ${weapon.clipSize}`;
+  }
+
   private handleMovement(): void {
-    // Reset velocity
     this.player.setVelocity(0);
 
-    // WASD movement
     let vx = 0;
     let vy = 0;
 
-    if (this.cursors.left.isDown) {
-      vx = -1;
-    } else if (this.cursors.right.isDown) {
-      vx = 1;
-    }
+    if (this.cursors.left.isDown) vx = -1;
+    else if (this.cursors.right.isDown) vx = 1;
 
-    if (this.cursors.up.isDown) {
-      vy = -1;
-    } else if (this.cursors.down.isDown) {
-      vy = 1;
-    }
+    if (this.cursors.up.isDown) vy = -1;
+    else if (this.cursors.down.isDown) vy = 1;
 
-    // Normalize diagonal movement
     if (vx !== 0 && vy !== 0) {
       const length = Math.sqrt(vx * vx + vy * vy);
       vx /= length;
@@ -213,55 +272,109 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleAiming(): void {
-    // Get mouse position in world coordinates
     const pointer = this.input.activePointer;
     const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
-
-    // Calculate angle from player to mouse
     const angle = Phaser.Math.Angle.Between(
       this.player.x,
       this.player.y,
       worldPoint.x,
       worldPoint.y
     );
-
-    // Rotate player to face mouse
     this.player.setRotation(angle);
   }
 
-  private handleShooting(time: number): void {
-    // Check if left mouse button is down and enough time has passed
-    if (this.input.activePointer.isDown && time > this.lastFireTime + PISTOL_FIRE_RATE) {
-      this.fireBullet();
-      this.lastFireTime = time;
+  private handleWeaponSwitch(): void {
+    for (let i = 0; i < this.weaponKeys.length; i++) {
+      if (Phaser.Input.Keyboard.JustDown(this.weaponKeys[i])) {
+        if (i !== this.currentWeaponIndex) {
+          this.currentWeaponIndex = i;
+          this.ammo = WEAPONS[i].clipSize;
+          this.isReloading = false;
+          this.reloadText.setVisible(false);
+        }
+      }
     }
   }
 
-  private fireBullet(): void {
-    // Get a bullet from the pool
-    const bullet = this.bullets.get(this.player.x, this.player.y) as Phaser.Physics.Arcade.Sprite;
+  private handleReload(time: number): void {
+    const weapon = this.getCurrentWeapon();
 
-    if (!bullet) return; // Pool exhausted
+    // Check if reload is complete
+    if (this.isReloading && time >= this.reloadEndTime) {
+      this.isReloading = false;
+      this.ammo = weapon.clipSize;
+      this.reloadText.setVisible(false);
+    }
 
-    bullet.setActive(true);
-    bullet.setVisible(true);
+    // Start reload on R key or empty clip
+    if (!this.isReloading && this.ammo < weapon.clipSize) {
+      if (Phaser.Input.Keyboard.JustDown(this.reloadKey) || this.ammo === 0) {
+        this.isReloading = true;
+        this.reloadEndTime = time + weapon.reloadTime;
+        this.reloadText.setVisible(true);
+      }
+    }
+  }
 
-    // Get mouse position in world coordinates
+  private handleShooting(time: number): void {
+    if (this.isReloading) return;
+    if (this.ammo <= 0) return;
+
+    const weapon = this.getCurrentWeapon();
+
+    if (this.input.activePointer.isDown && time > this.lastFireTime + weapon.fireRate) {
+      this.fireBullets();
+      this.lastFireTime = time;
+      this.ammo--;
+
+      // Auto-reload when empty
+      if (this.ammo === 0) {
+        this.isReloading = true;
+        this.reloadEndTime = time + weapon.reloadTime;
+        this.reloadText.setVisible(true);
+      }
+    }
+  }
+
+  private fireBullets(): void {
+    const weapon = this.getCurrentWeapon();
     const pointer = this.input.activePointer;
     const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+    const baseAngle = Phaser.Math.Angle.Between(
+      this.player.x,
+      this.player.y,
+      worldPoint.x,
+      worldPoint.y
+    );
 
-    // Calculate angle and velocity
-    const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, worldPoint.x, worldPoint.y);
-    bullet.setRotation(angle);
+    for (let i = 0; i < weapon.pellets; i++) {
+      const bullet = this.bullets.get(this.player.x, this.player.y) as Phaser.Physics.Arcade.Sprite;
+      if (!bullet) continue;
 
-    // Set velocity toward cursor
-    const velocityX = Math.cos(angle) * BULLET_SPEED;
-    const velocityY = Math.sin(angle) * BULLET_SPEED;
-    bullet.setVelocity(velocityX, velocityY);
+      bullet.setActive(true);
+      bullet.setVisible(true);
+
+      // Calculate spread angle
+      let angle = baseAngle;
+      if (weapon.pellets > 1) {
+        // Spread evenly across the spread arc
+        const spreadRange = weapon.spread;
+        const offset = (i / (weapon.pellets - 1) - 0.5) * spreadRange;
+        angle += offset;
+      } else if (weapon.spread > 0) {
+        // Single bullet with random spread (SMG inaccuracy)
+        angle += (Math.random() - 0.5) * weapon.spread;
+      }
+
+      bullet.setRotation(angle);
+      bullet.setVelocity(
+        Math.cos(angle) * weapon.bulletSpeed,
+        Math.sin(angle) * weapon.bulletSpeed
+      );
+    }
   }
 
   private cleanupBullets(): void {
-    // Deactivate bullets that leave the arena
     this.bullets.getChildren().forEach((bullet) => {
       const b = bullet as Phaser.Physics.Arcade.Sprite;
       if (b.active && (b.x < 0 || b.x > ARENA_SIZE || b.y < 0 || b.y > ARENA_SIZE)) {
@@ -279,32 +392,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnCreature(): void {
-    // Spawn at random edge of arena
-    const edge = Phaser.Math.Between(0, 3); // 0=top, 1=right, 2=bottom, 3=left
+    const edge = Phaser.Math.Between(0, 3);
     let x: number, y: number;
 
     switch (edge) {
-      case 0: // Top
-        x = Phaser.Math.Between(0, ARENA_SIZE);
-        y = 0;
-        break;
-      case 1: // Right
-        x = ARENA_SIZE;
-        y = Phaser.Math.Between(0, ARENA_SIZE);
-        break;
-      case 2: // Bottom
-        x = Phaser.Math.Between(0, ARENA_SIZE);
-        y = ARENA_SIZE;
-        break;
-      default: // Left
-        x = 0;
-        y = Phaser.Math.Between(0, ARENA_SIZE);
-        break;
+      case 0: x = Phaser.Math.Between(0, ARENA_SIZE); y = 0; break;
+      case 1: x = ARENA_SIZE; y = Phaser.Math.Between(0, ARENA_SIZE); break;
+      case 2: x = Phaser.Math.Between(0, ARENA_SIZE); y = ARENA_SIZE; break;
+      default: x = 0; y = Phaser.Math.Between(0, ARENA_SIZE); break;
     }
 
     const creature = this.creatures.get(x, y) as Phaser.Physics.Arcade.Sprite;
-
-    if (!creature) return; // Pool exhausted
+    if (!creature) return;
 
     creature.setActive(true);
     creature.setVisible(true);
@@ -312,19 +411,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private moveCreatures(): void {
-    // Move all active creatures toward the player
     this.creatures.getChildren().forEach((creature) => {
       const c = creature as Phaser.Physics.Arcade.Sprite;
       if (!c.active) return;
 
-      // Calculate angle to player
       const angle = Phaser.Math.Angle.Between(c.x, c.y, this.player.x, this.player.y);
-
-      // Set velocity toward player (scale base speed to reasonable pixel value)
-      const speed = ZOMBIE_BASE_SPEED * 100; // Convert to ~90 px/sec
+      const speed = ZOMBIE_BASE_SPEED * 100;
       c.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
-
-      // Rotate to face player
       c.setRotation(angle);
     });
   }
@@ -336,11 +429,8 @@ export class GameScene extends Phaser.Scene {
     const b = bullet as Phaser.Physics.Arcade.Sprite;
     const c = creature as Phaser.Physics.Arcade.Sprite;
 
-    // Deactivate bullet
     b.setActive(false);
     b.setVisible(false);
-
-    // Kill creature
     c.setActive(false);
     c.setVisible(false);
   }
@@ -351,41 +441,46 @@ export class GameScene extends Phaser.Scene {
   ): void {
     const c = creature as Phaser.Physics.Arcade.Sprite;
 
-    // Check damage cooldown (convert seconds to ms)
     const cooldownMs = PLAYER_COLLISION_COOLDOWN * 1000;
-    if (this.time.now < this.lastDamageTime + cooldownMs) {
-      return; // Still in cooldown
-    }
-
-    // Only damage if creature is active
+    if (this.time.now < this.lastDamageTime + cooldownMs) return;
     if (!c.active) return;
 
-    // Apply damage
-    this.playerHealth -= 20;
+    this.playerHealth -= ZOMBIE_DAMAGE;
     this.lastDamageTime = this.time.now;
 
-    // Update HUD
-    this.healthText.setText(`Health: ${Math.max(0, this.playerHealth)}`);
-
-    // Flash player red to indicate damage
     this.player.setTint(0xff0000);
     this.time.delayedCall(100, () => {
       this.player.clearTint();
     });
   }
 
+  private updateHUD(): void {
+    // Update health bar
+    const healthPercent = Math.max(0, this.playerHealth / PLAYER_MAX_HEALTH);
+    this.healthBarFill.setScale(healthPercent, 1);
+
+    // Change color based on health
+    if (healthPercent > 0.5) {
+      this.healthBarFill.setFillStyle(0x44ff44);
+    } else if (healthPercent > 0.25) {
+      this.healthBarFill.setFillStyle(0xffff44);
+    } else {
+      this.healthBarFill.setFillStyle(0xff4444);
+    }
+
+    // Update weapon and ammo text
+    this.weaponText.setText(`[${this.currentWeaponIndex + 1}] ${this.getCurrentWeapon().name}`);
+    this.ammoText.setText(this.getAmmoText());
+  }
+
   private checkDeath(): void {
     if (this.playerHealth <= 0 && !this.isGameOver) {
       this.isGameOver = true;
-
-      // Stop player
       this.player.setVelocity(0);
       this.player.setVisible(false);
-
-      // Show game over text
       this.gameOverText.setVisible(true);
+      this.reloadText.setVisible(false);
 
-      // Stop all creatures
       this.creatures.getChildren().forEach((creature) => {
         const c = creature as Phaser.Physics.Arcade.Sprite;
         c.setVelocity(0, 0);
