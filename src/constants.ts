@@ -136,3 +136,45 @@ export const ARENA_SIZE = 2000; // px
 export const SPEED_SCALE_DIVISOR = 4000;
 export const SPEED_SCALE_FACTOR = 0.045;
 export const SPEED_SCALE_BASE = 0.9;
+
+// Perks (from crimsonland.exe decompilation)
+// 7 perk choices on level up (crimsonland.exe:3579)
+// Perks are stackable via perk_counts[] array (crimsonland.exe:3995)
+export const PERK_CHOICES_COUNT = 7;
+
+export interface PerkConfig {
+  id: string;
+  name: string;
+  description: string;
+  stackable: boolean;
+  maxStacks?: number; // undefined = unlimited
+  effect: 'regeneration' | 'damage_reduction' | 'speed_bonus';
+  value: number; // effect magnitude per stack
+}
+
+export const PERKS: PerkConfig[] = [
+  {
+    id: 'regeneration',
+    name: 'Regeneration',
+    description: '+1 HP/sec when below max health',
+    stackable: true,
+    effect: 'regeneration',
+    value: 1, // HP per second per stack
+  },
+  {
+    id: 'thick_skinned',
+    name: 'Thick Skinned',
+    description: '10% damage reduction per stack',
+    stackable: true,
+    effect: 'damage_reduction',
+    value: 0.1, // 10% per stack
+  },
+  {
+    id: 'long_distance_runner',
+    name: 'Long Distance Runner',
+    description: '+15% movement speed per stack',
+    stackable: true,
+    effect: 'speed_bonus',
+    value: 0.15, // 15% per stack
+  },
+];

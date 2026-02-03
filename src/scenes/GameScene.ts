@@ -14,6 +14,9 @@ import {
   WEAPON_DROP_CHANCE,
   HEALTH_DROP_CHANCE,
   HEALTH_PICKUP_AMOUNT,
+  PERKS,
+  PERK_CHOICES_COUNT,
+  PerkConfig,
 } from '../constants';
 
 export class GameScene extends Phaser.Scene {
@@ -24,6 +27,12 @@ export class GameScene extends Phaser.Scene {
   lastDamageTime = 0;
   isGameOver = false;
   gameStartTime = 0;
+
+  // Level and perk system
+  playerLevel = 1;
+  perkPendingCount = 0;
+  perkCounts: Map<string, number> = new Map();
+  isPerkSelectionActive = false;
 
   // Weapon state
   currentWeaponIndex = 0;
@@ -50,6 +59,12 @@ export class GameScene extends Phaser.Scene {
   reloadText!: Phaser.GameObjects.Text;
   gameOverText!: Phaser.GameObjects.Text;
   xpText!: Phaser.GameObjects.Text;
+  levelText!: Phaser.GameObjects.Text;
+
+  // Perk selection UI
+  perkOverlay!: Phaser.GameObjects.Rectangle;
+  perkContainer!: Phaser.GameObjects.Container;
+  perkTitleText!: Phaser.GameObjects.Text;
 
   // Input
   cursors!: {
@@ -80,6 +95,12 @@ export class GameScene extends Phaser.Scene {
     this.isReloading = false;
     this.lastWeaponPickupTime = 0;
     this.gameStartTime = this.time.now;
+
+    // Reset perk state
+    this.playerLevel = 1;
+    this.perkPendingCount = 0;
+    this.perkCounts.clear();
+    this.isPerkSelectionActive = false;
 
     // Set world bounds (arena)
     this.physics.world.setBounds(0, 0, ARENA_SIZE, ARENA_SIZE);
@@ -230,13 +251,31 @@ export class GameScene extends Phaser.Scene {
     this.xpText.setOrigin(1, 0);
     this.xpText.setScrollFactor(0);
     this.xpText.setDepth(100);
+
+    // Level counter (below XP)
+    this.levelText = this.add.text(784, 44, 'Level: 1', {
+      fontSize: '20px',
+      color: '#ffaa44',
+      fontFamily: 'Arial',
+    });
+    this.levelText.setOrigin(1, 0);
+    this.levelText.setScrollFactor(0);
+    this.levelText.setDepth(100);
+
+    // Create perk selection UI (hidden initially)
+    this.createPerkUI();
   }
 
-  update(time: number, _delta: number): void {
+  update(time: number, delta: number): void {
     if (this.isGameOver) {
       if (this.input.activePointer.isDown) {
         this.scene.restart();
       }
+      return;
+    }
+
+    // Skip game updates if perk selection is active
+    if (this.isPerkSelectionActive) {
       return;
     }
 
@@ -247,6 +286,8 @@ export class GameScene extends Phaser.Scene {
     this.handleSpawning(time);
     this.moveCreatures();
     this.cleanupBullets();
+    this.applyPerkEffects(delta);
+    this.checkLevelUp();
     this.checkDeath();
     this.updateHUD();
   }
@@ -326,7 +367,12 @@ export class GameScene extends Phaser.Scene {
       vy /= length;
     }
 
-    this.player.setVelocity(vx * PLAYER_MOVE_SPEED, vy * PLAYER_MOVE_SPEED);
+    // Apply Long Distance Runner speed bonus (+15% per stack)
+    const speedStacks = this.perkCounts.get('long_distance_runner') || 0;
+    const speedBonus = speedStacks * 0.15;
+    const speed = PLAYER_MOVE_SPEED * (1 + speedBonus);
+
+    this.player.setVelocity(vx * speed, vy * speed);
   }
 
   private handleAiming(): void {
@@ -629,8 +675,14 @@ export class GameScene extends Phaser.Scene {
     if (!c.active) return;
 
     const creatureType = c.getData('creatureType') as CreatureType;
-    const damage = CREATURES[creatureType].damage;
-    this.playerHealth -= damage;
+    const baseDamage = CREATURES[creatureType].damage;
+
+    // Apply Thick Skinned damage reduction (10% per stack, max 90%)
+    const thickSkinnedStacks = this.perkCounts.get('thick_skinned') || 0;
+    const damageReduction = Math.min(thickSkinnedStacks * 0.1, 0.9);
+    const finalDamage = baseDamage * (1 - damageReduction);
+
+    this.playerHealth -= finalDamage;
     this.lastDamageTime = this.time.now;
 
     this.player.setTint(0xff0000);
@@ -704,6 +756,149 @@ export class GameScene extends Phaser.Scene {
 
     // Update XP text
     this.xpText.setText(`XP: ${this.playerXP}`);
+
+    // Update level text
+    this.levelText.setText(`Level: ${this.playerLevel}`);
+  }
+
+  private createPerkUI(): void {
+    // Dark overlay (covers full screen)
+    this.perkOverlay = this.add.rectangle(400, 300, 800, 600, 0x000000, 0.8);
+    this.perkOverlay.setScrollFactor(0);
+    this.perkOverlay.setDepth(200);
+    this.perkOverlay.setVisible(false);
+
+    // Title text
+    this.perkTitleText = this.add.text(400, 60, 'LEVEL UP! Choose a Perk', {
+      fontSize: '32px',
+      color: '#ffaa44',
+      fontFamily: 'Arial',
+    });
+    this.perkTitleText.setOrigin(0.5);
+    this.perkTitleText.setScrollFactor(0);
+    this.perkTitleText.setDepth(201);
+    this.perkTitleText.setVisible(false);
+
+    // Container for perk buttons
+    this.perkContainer = this.add.container(0, 0);
+    this.perkContainer.setScrollFactor(0);
+    this.perkContainer.setDepth(201);
+    this.perkContainer.setVisible(false);
+  }
+
+  private getXPThreshold(level: number): number {
+    // Simplified from original: 1000 - pow(0.7, level) * 1000
+    // Using linear approximation: 1000 * level
+    return 1000 * level;
+  }
+
+  private checkLevelUp(): void {
+    // Check if player has enough XP to level up
+    while (this.playerXP >= this.getXPThreshold(this.playerLevel)) {
+      this.playerLevel++;
+      this.perkPendingCount++;
+    }
+
+    // Show perk selection if we have pending perks and not already showing
+    if (this.perkPendingCount > 0 && !this.isPerkSelectionActive) {
+      this.showPerkSelection();
+    }
+  }
+
+  private showPerkSelection(): void {
+    this.isPerkSelectionActive = true;
+    this.physics.pause();
+
+    // Show overlay and title
+    this.perkOverlay.setVisible(true);
+    this.perkTitleText.setVisible(true);
+    this.perkTitleText.setText(`LEVEL UP! Choose a Perk (${this.perkPendingCount} remaining)`);
+    this.perkContainer.setVisible(true);
+
+    // Clear old buttons
+    this.perkContainer.removeAll(true);
+
+    // Get random perks to display
+    const perksToShow = this.getRandomPerks(Math.min(PERK_CHOICES_COUNT, PERKS.length));
+
+    // Create buttons for each perk
+    const buttonHeight = 70;
+    const startY = 120;
+    const buttonWidth = 350;
+
+    perksToShow.forEach((perk, index) => {
+      const y = startY + index * buttonHeight;
+      const currentStacks = this.perkCounts.get(perk.id) || 0;
+
+      // Button background
+      const bg = this.add.rectangle(400, y, buttonWidth, buttonHeight - 10, 0x444466);
+      bg.setInteractive({ useHandCursor: true });
+      bg.on('pointerover', () => bg.setFillStyle(0x6666aa));
+      bg.on('pointerout', () => bg.setFillStyle(0x444466));
+      bg.on('pointerdown', () => this.selectPerk(perk));
+
+      // Perk name with stack count
+      const stackText = currentStacks > 0 ? ` (x${currentStacks})` : '';
+      const nameText = this.add.text(400, y - 15, perk.name + stackText, {
+        fontSize: '18px',
+        color: '#ffffff',
+        fontFamily: 'Arial',
+      });
+      nameText.setOrigin(0.5);
+
+      // Perk description
+      const descText = this.add.text(400, y + 10, perk.description, {
+        fontSize: '14px',
+        color: '#aaaaaa',
+        fontFamily: 'Arial',
+      });
+      descText.setOrigin(0.5);
+
+      this.perkContainer.add([bg, nameText, descText]);
+    });
+  }
+
+  private getRandomPerks(count: number): PerkConfig[] {
+    // Shuffle and return up to count perks
+    const shuffled = [...PERKS].sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, count);
+  }
+
+  private selectPerk(perk: PerkConfig): void {
+    // Increment perk count
+    const current = this.perkCounts.get(perk.id) || 0;
+    this.perkCounts.set(perk.id, current + 1);
+
+    this.perkPendingCount--;
+
+    if (this.perkPendingCount <= 0) {
+      this.hidePerkSelection();
+    } else {
+      // Refresh perk choices for next selection
+      this.showPerkSelection();
+    }
+  }
+
+  private hidePerkSelection(): void {
+    this.isPerkSelectionActive = false;
+    this.perkOverlay.setVisible(false);
+    this.perkTitleText.setVisible(false);
+    this.perkContainer.setVisible(false);
+    this.perkContainer.removeAll(true);
+    this.physics.resume();
+  }
+
+  private applyPerkEffects(delta: number): void {
+    // Regeneration: +1 HP/sec per stack when below max health
+    // From crimsonland.exe:4710 - condition: health < 100 && health > 0
+    const regenStacks = this.perkCounts.get('regeneration') || 0;
+    if (regenStacks > 0 && this.playerHealth < PLAYER_MAX_HEALTH && this.playerHealth > 0) {
+      const regenRate = regenStacks * 1; // 1 HP per second per stack
+      this.playerHealth = Math.min(
+        PLAYER_MAX_HEALTH,
+        this.playerHealth + regenRate * (delta / 1000)
+      );
+    }
   }
 
   private checkDeath(): void {
