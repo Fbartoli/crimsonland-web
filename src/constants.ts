@@ -15,6 +15,8 @@ export interface WeaponConfig {
   bulletSpeed: number;
   pellets: number; // 1 for single shot, >1 for spread
   spread: number; // radians, 0 for single shot
+  color: number; // hex color for pickup sprite
+  dropWeight: number; // relative drop chance (higher = more common)
 }
 
 export const WEAPONS: WeaponConfig[] = [
@@ -27,6 +29,8 @@ export const WEAPONS: WeaponConfig[] = [
     bulletSpeed: 800,
     pellets: 1,
     spread: 0,
+    color: 0x888888, // gray
+    dropWeight: 0, // pistol doesn't drop (player starts with it)
   },
   {
     name: 'SMG',
@@ -36,7 +40,9 @@ export const WEAPONS: WeaponConfig[] = [
     reloadTime: 1200,
     bulletSpeed: 900,
     pellets: 1,
-    spread: 0.1, // slight inaccuracy
+    spread: 0.1,
+    color: 0x44aaff, // blue
+    dropWeight: 3, // common
   },
   {
     name: 'Shotgun',
@@ -47,8 +53,13 @@ export const WEAPONS: WeaponConfig[] = [
     bulletSpeed: 700,
     pellets: 8,
     spread: 0.3,
+    color: 0xff8844, // orange
+    dropWeight: 2, // less common
   },
 ];
+
+// Weapon drop chance when creature dies
+export const WEAPON_DROP_CHANCE = 0.15; // 15% chance to drop a weapon
 
 // Legacy constants for backwards compatibility
 export const PISTOL_FIRE_RATE = WEAPONS[0].fireRate;

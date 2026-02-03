@@ -11,6 +11,7 @@ import {
   SPEED_SCALE_DIVISOR,
   SPEED_SCALE_FACTOR,
   SPEED_SCALE_BASE,
+  WEAPON_DROP_CHANCE,
 } from '../constants';
 
 export class GameScene extends Phaser.Scene {
@@ -31,6 +32,7 @@ export class GameScene extends Phaser.Scene {
   // Groups
   bullets!: Phaser.Physics.Arcade.Group;
   creatures!: Phaser.Physics.Arcade.Group;
+  weaponPickups!: Phaser.Physics.Arcade.Group;
 
   // Timers
   lastFireTime = 0;
@@ -53,7 +55,6 @@ export class GameScene extends Phaser.Scene {
     right: Phaser.Input.Keyboard.Key;
   };
   reloadKey!: Phaser.Input.Keyboard.Key;
-  weaponKeys!: Phaser.Input.Keyboard.Key[];
 
   constructor() {
     super({ key: 'GameScene' });
@@ -92,6 +93,11 @@ export class GameScene extends Phaser.Scene {
       maxSize: 200,
     });
 
+    // Create weapon pickups group
+    this.weaponPickups = this.physics.add.group({
+      maxSize: 50,
+    });
+
     // Create player at center
     this.player = this.physics.add.sprite(ARENA_SIZE / 2, ARENA_SIZE / 2, 'player');
     this.player.setCollideWorldBounds(true);
@@ -114,6 +120,14 @@ export class GameScene extends Phaser.Scene {
       this
     );
 
+    this.physics.add.overlap(
+      this.player,
+      this.weaponPickups,
+      this.onWeaponPickup,
+      undefined,
+      this
+    );
+
     // Set up camera
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
     this.cameras.main.setBounds(0, 0, ARENA_SIZE, ARENA_SIZE);
@@ -127,12 +141,6 @@ export class GameScene extends Phaser.Scene {
     };
 
     this.reloadKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.R);
-
-    this.weaponKeys = [
-      this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ONE),
-      this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.TWO),
-      this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.THREE),
-    ];
 
     // Set initial spawn time
     this.nextSpawnTime = this.time.now + SPAWN_INTERVAL;
@@ -216,7 +224,6 @@ export class GameScene extends Phaser.Scene {
 
     this.handleMovement();
     this.handleAiming();
-    this.handleWeaponSwitch();
     this.handleReload(time);
     this.handleShooting(time);
     this.handleSpawning(time);
@@ -258,6 +265,20 @@ export class GameScene extends Phaser.Scene {
     healthGraphics.fillCircle(8, 8, 8);
     healthGraphics.generateTexture('health', 16, 16);
     healthGraphics.destroy();
+
+    // Create weapon pickup sprites for each weapon type
+    for (let i = 0; i < WEAPONS.length; i++) {
+      const weapon = WEAPONS[i];
+      const g = this.make.graphics({ x: 0, y: 0 });
+      // Draw a rectangle with the weapon's color
+      g.fillStyle(weapon.color);
+      g.fillRect(0, 0, 24, 16);
+      // Add a small indicator triangle to show it's a pickup
+      g.fillStyle(0xffffff);
+      g.fillTriangle(18, 8, 24, 4, 24, 12);
+      g.generateTexture(`weapon_${i}`, 24, 16);
+      g.destroy();
+    }
   }
 
   private getCurrentWeapon() {
@@ -300,19 +321,6 @@ export class GameScene extends Phaser.Scene {
       worldPoint.y
     );
     this.player.setRotation(angle);
-  }
-
-  private handleWeaponSwitch(): void {
-    for (let i = 0; i < this.weaponKeys.length; i++) {
-      if (Phaser.Input.Keyboard.JustDown(this.weaponKeys[i])) {
-        if (i !== this.currentWeaponIndex) {
-          this.currentWeaponIndex = i;
-          this.ammo = WEAPONS[i].clipSize;
-          this.isReloading = false;
-          this.reloadText.setVisible(false);
-        }
-      }
-    }
   }
 
   private handleReload(time: number): void {
@@ -518,9 +526,36 @@ export class GameScene extends Phaser.Scene {
       const xpValue = CREATURES[creatureType].xpValue;
       this.playerXP += xpValue;
 
+      // Try to drop a weapon
+      this.tryDropWeapon(c.x, c.y);
+
       c.setActive(false);
       c.setVisible(false);
     }
+  }
+
+  private tryDropWeapon(x: number, y: number): void {
+    // Check if we should drop a weapon
+    if (Math.random() > WEAPON_DROP_CHANCE) return;
+
+    // Build weighted pool of droppable weapons
+    const pool: number[] = [];
+    for (let i = 0; i < WEAPONS.length; i++) {
+      const weight = WEAPONS[i].dropWeight;
+      for (let j = 0; j < weight; j++) {
+        pool.push(i);
+      }
+    }
+
+    // No droppable weapons configured
+    if (pool.length === 0) return;
+
+    // Pick random weapon from pool
+    const weaponIndex = pool[Phaser.Math.Between(0, pool.length - 1)];
+    const weapon = WEAPONS[weaponIndex];
+
+    // Spawn with full ammo
+    this.spawnWeaponPickup(x, y, weaponIndex, weapon.clipSize);
   }
 
   private onCreatureHitPlayer(
@@ -544,6 +579,47 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  private onWeaponPickup(
+    _player: Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
+    pickup: Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
+  ): void {
+    const p = pickup as Phaser.Physics.Arcade.Sprite;
+    if (!p.active) return;
+
+    const pickupWeaponIndex = p.getData('weaponIndex') as number;
+    const pickupAmmo = p.getData('ammo') as number;
+
+    // Drop current weapon at player position
+    this.spawnWeaponPickup(this.player.x, this.player.y, this.currentWeaponIndex, this.ammo);
+
+    // Pick up new weapon
+    this.currentWeaponIndex = pickupWeaponIndex;
+    this.ammo = pickupAmmo;
+    this.isReloading = false;
+    this.reloadText.setVisible(false);
+
+    // Remove the pickup
+    p.setActive(false);
+    p.setVisible(false);
+  }
+
+  private spawnWeaponPickup(x: number, y: number, weaponIndex: number, ammo: number): void {
+    const pickup = this.weaponPickups.create(x, y, `weapon_${weaponIndex}`) as Phaser.Physics.Arcade.Sprite;
+    if (!pickup) return;
+
+    pickup.setActive(true);
+    pickup.setVisible(true);
+    pickup.setData('weaponIndex', weaponIndex);
+    pickup.setData('ammo', ammo);
+    pickup.setDepth(5);
+
+    // Add slight random offset so dropped weapons don't stack exactly
+    pickup.setPosition(
+      x + Phaser.Math.Between(-10, 10),
+      y + Phaser.Math.Between(-10, 10)
+    );
+  }
+
   private updateHUD(): void {
     // Update health bar
     const healthPercent = Math.max(0, this.playerHealth / PLAYER_MAX_HEALTH);
@@ -559,7 +635,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Update weapon and ammo text
-    this.weaponText.setText(`[${this.currentWeaponIndex + 1}] ${this.getCurrentWeapon().name}`);
+    this.weaponText.setText(this.getCurrentWeapon().name);
     this.ammoText.setText(this.getAmmoText());
 
     // Update XP text
