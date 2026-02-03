@@ -7,12 +7,15 @@ import {
   BULLET_SPEED,
   SPAWN_INTERVAL,
   ZOMBIE_BASE_SPEED,
+  PLAYER_COLLISION_COOLDOWN,
 } from '../constants';
 
 export class GameScene extends Phaser.Scene {
   // Player state
   player!: Phaser.Physics.Arcade.Sprite;
   playerHealth = PLAYER_MAX_HEALTH;
+  lastDamageTime = 0;
+  isGameOver = false;
 
   // Groups
   bullets!: Phaser.Physics.Arcade.Group;
@@ -21,6 +24,10 @@ export class GameScene extends Phaser.Scene {
   // Timers
   lastFireTime = 0;
   nextSpawnTime = 0;
+
+  // UI
+  healthText!: Phaser.GameObjects.Text;
+  gameOverText!: Phaser.GameObjects.Text;
 
   // Input
   cursors!: {
@@ -40,6 +47,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
+    // Reset game state
+    this.playerHealth = PLAYER_MAX_HEALTH;
+    this.lastDamageTime = 0;
+    this.isGameOver = false;
+    this.lastFireTime = 0;
+
     // Set world bounds (arena)
     this.physics.world.setBounds(0, 0, ARENA_SIZE, ARENA_SIZE);
 
@@ -63,6 +76,23 @@ export class GameScene extends Phaser.Scene {
     this.player.setCollideWorldBounds(true);
     this.player.setDepth(10);
 
+    // Set up collisions
+    this.physics.add.overlap(
+      this.bullets,
+      this.creatures,
+      this.onBulletHitCreature,
+      undefined,
+      this
+    );
+
+    this.physics.add.overlap(
+      this.player,
+      this.creatures,
+      this.onCreatureHitPlayer,
+      undefined,
+      this
+    );
+
     // Set up camera to follow player
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
     this.cameras.main.setBounds(0, 0, ARENA_SIZE, ARENA_SIZE);
@@ -77,15 +107,46 @@ export class GameScene extends Phaser.Scene {
 
     // Set initial spawn time
     this.nextSpawnTime = this.time.now + SPAWN_INTERVAL;
+
+    // Create HUD (fixed to camera)
+    this.healthText = this.add.text(16, 16, `Health: ${this.playerHealth}`, {
+      fontSize: '24px',
+      color: '#ffffff',
+      fontFamily: 'Arial',
+    });
+    this.healthText.setScrollFactor(0);
+    this.healthText.setDepth(100);
+
+    // Create game over text (hidden initially)
+    this.gameOverText = this.add.text(400, 300, 'GAME OVER\n\nClick to restart', {
+      fontSize: '48px',
+      color: '#ff4444',
+      fontFamily: 'Arial',
+      align: 'center',
+    });
+    this.gameOverText.setOrigin(0.5);
+    this.gameOverText.setScrollFactor(0);
+    this.gameOverText.setDepth(100);
+    this.gameOverText.setVisible(false);
   }
 
   update(time: number, _delta: number): void {
+    // Handle game over state
+    if (this.isGameOver) {
+      // Check for click to restart
+      if (this.input.activePointer.isDown) {
+        this.scene.restart();
+      }
+      return;
+    }
+
     this.handleMovement();
     this.handleAiming();
     this.handleShooting(time);
     this.handleSpawning(time);
     this.moveCreatures();
     this.cleanupBullets();
+    this.checkDeath();
   }
 
   private createPlaceholderSprites(): void {
@@ -266,5 +327,69 @@ export class GameScene extends Phaser.Scene {
       // Rotate to face player
       c.setRotation(angle);
     });
+  }
+
+  private onBulletHitCreature(
+    bullet: Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
+    creature: Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
+  ): void {
+    const b = bullet as Phaser.Physics.Arcade.Sprite;
+    const c = creature as Phaser.Physics.Arcade.Sprite;
+
+    // Deactivate bullet
+    b.setActive(false);
+    b.setVisible(false);
+
+    // Kill creature
+    c.setActive(false);
+    c.setVisible(false);
+  }
+
+  private onCreatureHitPlayer(
+    _player: Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
+    creature: Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
+  ): void {
+    const c = creature as Phaser.Physics.Arcade.Sprite;
+
+    // Check damage cooldown (convert seconds to ms)
+    const cooldownMs = PLAYER_COLLISION_COOLDOWN * 1000;
+    if (this.time.now < this.lastDamageTime + cooldownMs) {
+      return; // Still in cooldown
+    }
+
+    // Only damage if creature is active
+    if (!c.active) return;
+
+    // Apply damage
+    this.playerHealth -= 20;
+    this.lastDamageTime = this.time.now;
+
+    // Update HUD
+    this.healthText.setText(`Health: ${Math.max(0, this.playerHealth)}`);
+
+    // Flash player red to indicate damage
+    this.player.setTint(0xff0000);
+    this.time.delayedCall(100, () => {
+      this.player.clearTint();
+    });
+  }
+
+  private checkDeath(): void {
+    if (this.playerHealth <= 0 && !this.isGameOver) {
+      this.isGameOver = true;
+
+      // Stop player
+      this.player.setVelocity(0);
+      this.player.setVisible(false);
+
+      // Show game over text
+      this.gameOverText.setVisible(true);
+
+      // Stop all creatures
+      this.creatures.getChildren().forEach((creature) => {
+        const c = creature as Phaser.Physics.Arcade.Sprite;
+        c.setVelocity(0, 0);
+      });
+    }
   }
 }
