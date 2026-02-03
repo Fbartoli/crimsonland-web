@@ -3,7 +3,9 @@ import {
   PLAYER_MAX_HEALTH,
   PLAYER_MOVE_SPEED,
   ARENA_SIZE,
-  SPAWN_INTERVAL,
+  SPAWN_INTERVAL_BASE,
+  SPAWN_INTERVAL_DIVISOR,
+  SPAWN_INTERVAL_MIN,
   PLAYER_COLLISION_COOLDOWN,
   WEAPONS,
   CREATURES,
@@ -181,8 +183,8 @@ export class GameScene extends Phaser.Scene {
 
     this.reloadKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.R);
 
-    // Set initial spawn time
-    this.nextSpawnTime = this.time.now + SPAWN_INTERVAL;
+    // Set initial spawn time (uses base interval since game just started)
+    this.nextSpawnTime = this.time.now + SPAWN_INTERVAL_BASE;
 
     // Create HUD
     this.createHUD();
@@ -475,10 +477,18 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  private getSpawnInterval(): number {
+    // Original formula from crimsonland.exe:37535-37538
+    // spawn_interval = 3500 - elapsed_ms / 800, minimum 100ms
+    const elapsed = this.time.now - this.gameStartTime;
+    const interval = SPAWN_INTERVAL_BASE - Math.floor(elapsed / SPAWN_INTERVAL_DIVISOR);
+    return Math.max(interval, SPAWN_INTERVAL_MIN);
+  }
+
   private handleSpawning(time: number): void {
     if (time > this.nextSpawnTime) {
       this.spawnCreature();
-      this.nextSpawnTime = time + SPAWN_INTERVAL;
+      this.nextSpawnTime = time + this.getSpawnInterval();
     }
   }
 

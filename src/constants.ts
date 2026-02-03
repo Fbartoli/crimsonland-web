@@ -95,7 +95,7 @@ export const CREATURES: CreatureConfig[] = [
     health: 40,
     speed: 0.9,
     damage: 20,
-    xpValue: 10,
+    xpValue: 25, // increased from 10
     size: 32,
     color: 0xff4444, // red
   },
@@ -105,7 +105,7 @@ export const CREATURES: CreatureConfig[] = [
     health: 20,
     speed: 1.8,
     damage: 10,
-    xpValue: 15,
+    xpValue: 35, // increased from 15
     size: 24,
     color: 0xffaa44, // orange
   },
@@ -115,7 +115,7 @@ export const CREATURES: CreatureConfig[] = [
     health: 150,
     speed: 0.5,
     damage: 40,
-    xpValue: 50,
+    xpValue: 100, // increased from 50
     size: 48,
     color: 0x8844ff, // purple
   },
@@ -127,8 +127,11 @@ export const ZOMBIE_BASE_SPEED = CREATURES[0].speed;
 export const ZOMBIE_XP_VALUE = CREATURES[0].xpValue;
 export const ZOMBIE_DAMAGE = CREATURES[0].damage;
 
-// Spawning
-export const SPAWN_INTERVAL = 2000; // ms
+// Spawning - from crimsonland.exe:37535-37538
+// Original formula: 3500 - elapsed_ms / 800, minimum 100ms
+export const SPAWN_INTERVAL_BASE = 3500; // ms - starting spawn interval
+export const SPAWN_INTERVAL_DIVISOR = 800; // elapsed_ms / this = reduction
+export const SPAWN_INTERVAL_MIN = 100; // ms - fastest spawn rate
 export const ARENA_SIZE = 2000; // px
 
 // Scaling formula from crimsonland.exe:5104
